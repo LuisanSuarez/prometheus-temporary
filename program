@@ -1,0 +1,150 @@
+import tweepy
+from tweepy import OAuthHandler
+from tweepy import Stream
+from tweepy.streaming import StreamListener
+import json
+import re
+
+
+"""
+    ABG: A ver si puedes ir encapsulando todas estas funciones en una clase
+    de forma que esté todo más compacto. Luego créate una rutina de main para
+    que se pueda ejecutar el programa como un binario (hint: __main__).
+"""
+
+
+#estos son los datos de mi app 
+consumer_key        = 'c5onGkk6P0KRoNoda2d0fSOlH'
+consumer_secret     = '2VKkYNVeA8Q2Ld0OPUedmNsddFQi2bDGob6FWDoJT1GFaPK2xD'
+access_token        = '1132397700-cPn6Bj5LU3qQuxqtkgOJoRyRHz1gMhw84yGrFVZ'
+access_token_secret = 'zUb7ZwM4wnI7Waqxm9ArVV0x7VJ6Cw0hIz6SNgGGhqsdV'
+ 
+# OAuth process, using the keys and tokens
+auth = OAuthHandler(consumer_key, consumer_secret)
+auth.set_access_token(access_token, access_token_secret)
+ 
+# Creation of the actual interface, using authentication
+api = tweepy.API(auth)
+
+"""
+ABG: Todo esto debería inicializarse al comienzo de la clase
+"""
+
+#regex compile para identificar palabras especificas
+emoticons_str = r"""
+    (?:
+        [:=;] # Eyes
+        [oO\-]? # Nose (optional)
+        [D\)\]\(\]/\\OpP] # Mouth
+    )"""
+ 
+regex_str = [
+    emoticons_str,
+    r'<[^>]+>', # HTML tags
+    r'(?:@[\w_]+)', # @-mentions
+    r"(?:\#+[\w_]+[\w\'_\-]*[\w_]+)", # hash-tags
+    r'http[s]?://(?:[a-z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-f][0-9a-f]))+', # URLs
+ 
+    r'(?:(?:\d+,?)+(?:\.?\d+)?)', # numbers
+    r"(?:[a-z][a-z'\-_]+[a-z])", # words with - and '
+    r'(?:[\w_]+)', # other words
+    r'(?:\S)' # anything else
+]
+    
+tokens_re = re.compile(r'('+'|'.join(regex_str)+')', re.VERBOSE | re.IGNORECASE)
+emoticon_re = re.compile(r'^'+emoticons_str+'$', re.VERBOSE | re.IGNORECASE)
+ 
+def tokenize(s):
+    return tokens_re.findall(s)
+ 
+def preprocess(s, lowercase=False):
+    tokens = tokenize(s)
+    if lowercase:
+        """ ABG: Aunque muy compacto, a veces es mejor separarlo para
+        mejorar el análisis del código. Intenta separarlo en un par de
+        líneas, para mejorar la legibilidad
+        """
+        tokens = [token if emoticon_re.search(token) else token.lower() for token in tokens]
+    return tokens
+
+"""
+    ABG: Estás usando un fichero para almacenar el json de los tweets,
+    pero realmente no le sacas partido. Lo que haces ahora es:
+    creo un fichero nuevo, almaceno 10 tweets en json, cierro el fichero.
+    Luego lo vuelvo a abrir, lo leo, decodifico el json y compruebo las
+    regexp, tokenizo y lo muestro. Dado que reseteas el fichero cada vez,
+    por qué usas un fichero en primera instancia? Con solo 10 tweets,
+    puedes hacerlo todo en memoria sin problema :) Si fueran más o quieres
+    mantener un histórico, entonces tiene sentido. En este caso, sería
+    interesante explorar hash tables, b-trees o directamente dejar que
+    lo gestione el dbm :)
+"""
+
+
+def store(fname, tweet):
+    if not fname:
+        """
+            ABG: Si no hay fname, te va a fallar esta llamada
+        """
+        op = open(fname, 'w')
+        op.close()
+    else:
+        json_tweet = json.dumps(tweet)
+        with open(fname, 'a') as op:
+            op.write(json_tweet)
+            op.write('\n')
+            op.close()
+    
+#para no duplicar tweets cada vez que se corra el programa
+reset = open('Luisan.json', 'w')
+reset.close()
+
+for tweet in tweepy.Cursor(api.user_timeline).items(10):    
+    store('Luisan.json', tweet._json)
+
+with open('Luisan.json', 'r') as f:
+    texto_tweets = []
+    for line in f:
+        tweet = json.loads(line)
+        tokens = preprocess(tweet['text'])
+        texto_tweets.append(tokens)
+
+"""
+    ABG: Es una buena práctica meter todas las constantes en variables
+    que te permitan luego referenciarlas. i.e. ITEMS = 10 y luego aquí
+    abajo: if len(texto_tweets) == ITEMS: ...
+"""
+
+# Print the target tweets and their tokens
+for tweet in texto_tweets:
+    print(tweet)
+
+#reviso que esten todos los tweets
+print len(texto_tweets)
+
+"""
+    ABG: Faltaría imprimir los tokens no? O al menos almacenarlos en algún
+    lado :P
+    Por otro lado, a ver si le puedes ir metiendo la gestión de excepciones
+    (hint: try: except) para que no se muera el programa :)
+"""
+
+#esta guardado para usar streaming más adelante
+'''
+class MyListener(StreamListener):
+ 
+    def on_data(self, data):
+        try:
+            with open('python.json', 'a') as f:
+                f.write(data)
+                return True
+        except BaseException as e:
+            print("Error on_data: %s" % str(e))
+        return True
+ 
+    def on_error(self, status):
+        print(status)
+        return True
+#twitter_stream = Stream(auth, MyListener())
+#twitter_stream.filter(track=['#python'])
+'''
